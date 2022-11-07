@@ -118,18 +118,52 @@ classdef Mesh
     
     % Meshing methods:
     methods (Access = public)
-        function [] = structured_mesh(self,resolutions)
-            assert(numel(resolutions) == 3, 'Must specify resolution for each dimension (xyz)')
-            xmax = max(self.vertices(:,1));
-            xmin = min(self.vertices(:,1));
-            ymax = max(self.vertices(:,2));
-            ymin = min(self.vertices(:,2));
-            zmax = max(self.vertices(:,3));
-            zmin = min(self.vertices(:,3));
-            [X,Y,Z] = meshgrid(linspace(xmin,xmax,resolutions(1)),...
-                               linspace(ymin,ymax,resolutions(2)),...
-                               linspace(zmin,zmax,resolutions(3)));
-           plot3(X(:),Y(:),Z(:),'.k');
+        function [] = remesh(self,resolution)
+            new_vertices = [];
+            new_faces = [];
+            for ii = 1:length(self.faces)
+                vert0 = self.vertices(self.faces(ii,1),:)';
+                vert1 = self.vertices(self.faces(ii,2),:)';
+                vert2 = self.vertices(self.faces(ii,3),:)';
+                
+                % Sample points along the edge:
+                edge01 = vert1 - vert0;
+                edge02 = vert2 - vert0;
+                edge12 = vert2 - vert1;
+                n01 = norm(edge01);
+                n02 = norm(edge02);
+                n12 = norm(edge12);
+                edge_pts = [linspace(0,1,ceil(n01/resolution)).*edge01 + vert0,...
+                            linspace(0,1,ceil(n02/resolution)).*edge02 + vert0,...
+                            linspace(0,1,ceil(n12/resolution)).*edge12 + vert1];
+                
+                % Sample points on face:
+                [normal,area] = normc(cross(edge01, edge02));
+                num_pts = round(area/resolution^2);
+                face_pts = zeros(3,num_pts);
+                s = rand(1,num_pts);
+                t = rand(1,num_pts);
+                inside = s + t <= 1;
+                if any(inside)
+                    face_pts(:,inside)  = s(inside).*edge01 + t(inside).*edge02 + vert0;
+                    if any(~inside)
+                        face_pts(:,~inside) = (1-s(~inside)).*edge01 + (1-t(~inside)).*edge02 + vert0;
+                    end
+                end
+                new_pts = [edge_pts, face_pts];
+                xaxis = normc(new_pts(:,1) - self.face_centers(ii,:)');
+                yaxis = cross(normal,xaxis);
+                rotmat = [xaxis'; yaxis'; normal'];
+                pts_2d = rotmat*new_pts;
+                
+                
+                face_defs = delaunay(pts_2d(1:2,:)');
+                new_faces = [new_faces; face_defs+size(new_vertices,2)];
+                new_vertices = [new_vertices, new_pts];
+            end
+%             plot3(new_vertices(1,:),new_vertices(2,:),new_vertices(3,:),'.k','MarkerSize',10);
+            figure()
+            patch('Faces',new_faces,'Vertices',new_vertices','FaceColor',[.5 .5 .5]);
         end
     end
     
